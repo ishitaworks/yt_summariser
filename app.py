@@ -128,9 +128,9 @@ def api_summarize():
     video_id = extract_video_id(url)
     if not video_id:
         return jsonify(error="That doesn't look like a valid YouTube link."), 400
-     try:
+    try:
         transcript = get_transcript(video_id)
-     except Exception as exc:
+    except Exception as exc:
         print("CAPTION ERROR:", repr(exc), flush=True)
         if not ENABLE_AUDIO:
             return jsonify(error="This video has no captions, and audio transcription is turned off on this server."), 422
