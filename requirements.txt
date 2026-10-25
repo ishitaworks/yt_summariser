@@ -1,0 +1,6 @@
+flask
+youtube-transcript-api
+anthropic
+yt-dlp
+faster-whisper
+gunicorn
