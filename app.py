@@ -6,7 +6,7 @@ import time
 from collections import defaultdict, deque
 
 from anthropic import Anthropic
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, request, send_file
 from youtube_transcript_api import YouTubeTranscriptApi
 
 app = Flask(__name__)
@@ -46,8 +46,28 @@ def extract_video_id(url: str):
     return match.group(1) if match else None
 
 
+def build_api() -> YouTubeTranscriptApi:
+    """Use a proxy when configured, so YouTube doesn't block the server's IP."""
+    user = os.environ.get("WEBSHARE_USER")
+    password = os.environ.get("WEBSHARE_PASS")
+    proxy_url = os.environ.get("PROXY_URL")  # e.g. http://user:pass@host:port
+    if user and password:
+        from youtube_transcript_api.proxies import WebshareProxyConfig
+
+        return YouTubeTranscriptApi(
+            proxy_config=WebshareProxyConfig(proxy_username=user, proxy_password=password)
+        )
+    if proxy_url:
+        from youtube_transcript_api.proxies import GenericProxyConfig
+
+        return YouTubeTranscriptApi(
+            proxy_config=GenericProxyConfig(http_url=proxy_url, https_url=proxy_url)
+        )
+    return YouTubeTranscriptApi()
+
+
 def get_transcript(video_id: str) -> str:
-    api = YouTubeTranscriptApi()
+    api = build_api()
     transcripts = api.list(video_id)
     try:
         transcript = transcripts.find_transcript(["en", "hi"])
@@ -116,7 +136,12 @@ def summarize(text: str) -> str:
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    base = os.path.dirname(os.path.abspath(__file__))
+    for folder in (os.path.join(base, "templates"), base):
+        path = os.path.join(folder, "index.html")
+        if os.path.exists(path):
+            return send_file(path)
+    return "index.html was not found in the repository.", 500
 
 
 @app.route("/api/summarize", methods=["POST"])
@@ -132,6 +157,7 @@ def api_summarize():
         transcript = get_transcript(video_id)
     except Exception as exc:
         print("CAPTION ERROR:", repr(exc), flush=True)
+        # No captions available: fall back to speech-to-text on the audio
         if not ENABLE_AUDIO:
             return jsonify(error="This video has no captions, and audio transcription is turned off on this server."), 422
         try:
